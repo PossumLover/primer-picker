@@ -2,6 +2,274 @@ import streamlit as st
 from primers import create
 import pandas as pd
 
+# Restriction enzyme database
+RESTRICTION_ENZYMES = {
+    'AclI': 'AACGTT',
+    'HindIII': 'AAGCTT',
+    'SspI-HF': 'AATATT',
+    'MluCI': 'AATT',
+    'PciI': 'ACATGT',
+    'AgeI-HF': 'ACCGGT',
+    'BfuAI': 'ACCTGC',
+    'BspMI': 'ACCTGC',
+    'SexAI': 'ACCWGGT',
+    'MluI-HF': 'ACGCGT',
+    'BceAI': 'ACGGC',
+    'HpyCH4IV': 'ACGT',
+    'HpyCH4III': 'ACNGT',
+    'BaeI': 'ACNNNNGTAYC',
+    'BsaXI': 'ACNNNNNCTCC',
+    'AflIII': 'ACRYGT',
+    'SpeI-HF': 'ACTAGT',
+    'BsrI': 'ACTGG',
+    'BmrI': 'ACTGGG',
+    'BglII': 'AGATCT',
+    'AfeI': 'AGCGCT',
+    'AluI': 'AGCT',
+    'StuI': 'AGGCCT',
+    'ScaI-HF': 'AGTACT',
+    'ClaI': 'ATCGAT',
+    'BspDI': 'ATCGAT',
+    'PI-SceI': 'ATCTATGTCGGGTGCGGAGAAAGAGGTAAT',
+    'NsiI-HF': 'ATGCAT',
+    'NsiI': 'ATGCAT',
+    'AseI': 'ATTAAT',
+    'SwaI': 'ATTTAAAT',
+    'CspCI': 'CAANNNNNGTGG',
+    'MfeI-HF': 'CAATTG',
+    'PaqCI': 'CACCTGC',
+    'BssSI-v2': 'CACGAG',
+    'Nb.BssSI': 'CACGAG',
+    'BmgBI': 'CACGTC',
+    'PmlI': 'CACGTG',
+    'DraIII-HF': 'CACNNNGTG',
+    'AleI-v2': 'CACNNNNGTG',
+    'EcoP15I': 'CAGCAG',
+    'PvuII-HF': 'CAGCTG',
+    'PvuII': 'CAGCTG',
+    'AlwNI': 'CAGNNNCTG',
+    'BtsIMutI': 'CAGTG',
+    'NdeI': 'CATATG',
+    'NlaIII': 'CATG',
+    'FatI': 'CATG',
+    'MslI': 'CAYNNNNRTG',
+    'XcmI': 'CCANNNNNNNNNTGG',
+    'BstXI': 'CCANNNNNNTGG',
+    'PflMI': 'CCANNNNNTGG',
+    'BccI': 'CCATC',
+    'NcoI-HF': 'CCATGG',
+    'NcoI': 'CCATGG',
+    'BseYI': 'CCCAGC',
+    'FauI': 'CCCGC',
+    'TspMI': 'CCCGGG',
+    'XmaI': 'CCCGGG',
+    'SmaI': 'CCCGGG',
+    'Nt.CviPII': 'CCD',
+    'AciI': 'CCGC',
+    'SacII': 'CCGCGG',
+    'BsrBI': 'CCGCTC',
+    'HpaII': 'CCGG',
+    'MspI': 'CCGG',
+    'ScrFI': 'CCNGG',
+    'StyD4I': 'CCNGG',
+    'BsaJI': 'CCNNGG',
+    'BslI': 'CCNNNNNNNGG',
+    'BtgI': 'CCRYGG',
+    'NciI': 'CCSGG',
+    'AvrII': 'CCTAGG',
+    'MnlI': 'CCTC',
+    'BbvCI': 'CCTCAGC',
+    'Nt.BbvCI': 'CCTCAGC',
+    'Nb.BbvCI': 'CCTCAGC',
+    'SbfI-HF': 'CCTGCAGG',
+    'Bpu10I': 'CCTNAGC',
+    'Bsu36I': 'CCTNAGG',
+    'EcoNI': 'CCTNNNNNAGG',
+    'HpyAV': 'CCTTC',
+    'BstNI': 'CCWGG',
+    'PspGI': 'CCWGG',
+    'StyI-HF': 'CCWWGG',
+    'BcgI': 'CGANNNNNNTGC',
+    'PvuI-HF': 'CGATCG',
+    'BstUI': 'CGCG',
+    'EagI-HF': 'CGGCCG',
+    'RsrII': 'CGGWCCG',
+    'BsiEI': 'CGRYCG',
+    'BsiWI-HF': 'CGTACG',
+    'BsiWI': 'CGTACG',
+    'BsmBI-v2': 'CGTCTC',
+    'Esp3I': 'CGTCTC',
+    'Hpy99I': 'CGWCG',
+    'MspA1I': 'CMGCKG',
+    'MspJI': 'CNNR',
+    'SgrAI': 'CRCCGGYG',
+    'BfaI': 'CTAG',
+    'BspCNI': 'CTCAG',
+    'XhoI': 'CTCGAG',
+    'PaeR7I': 'CTCGAG',
+    'EarI': 'CTCTTC',
+    'AcuI': 'CTGAAG',
+    'PstI-HF': 'CTGCAG',
+    'PstI': 'CTGCAG',
+    'BpmI': 'CTGGAG',
+    'DdeI': 'CTNAG',
+    'SfcI': 'CTRYAG',
+    'AflII': 'CTTAAG',
+    'BpuEI': 'CTTGAG',
+    'SmlI': 'CTYRAG',
+    'BsoBI': 'CYCGRG',
+    'AvaI': 'CYCGRG',
+    'MboII': 'GAAGA',
+    'BbsI': 'GAAGAC',
+    'BbsI-HF': 'GAAGAC',
+    'XmnI': 'GAANNNNTTC',
+    'BsmI': 'GAATGC',
+    'Nb.BsmI': 'GAATGC',
+    'EcoRI': 'GAATTC',
+    'EcoRI-HF': 'GAATTC',
+    'HgaI': 'GACGC',
+    'AatII': 'GACGTC',
+    'ZraI': 'GACGTC',
+    'PflFI': 'GACNNNGTC',
+    'Tth111I': 'GACNNNGTC',
+    'PshAI': 'GACNNNNGTC',
+    'AhdI': 'GACNNNNNGTC',
+    'DrdI': 'GACNNNNNNGTC',
+    'Eco53kI': 'GAGCTC',
+    'SacI-HF': 'GAGCTC',
+    'BseRI': 'GAGGAG',
+    'MlyI': 'GAGTC',
+    'PleI': 'GAGTC',
+    'Nt.BstNBI': 'GAGTC',
+    'HinfI': 'GANTC',
+    'EcoRV': 'GATATC',
+    'EcoRV-HF': 'GATATC',
+    'DpnI': 'GATC',
+    'MboI': 'GATC',
+    'Sau3AI': 'GATC',
+    'DpnII': 'GATC',
+    'BsaBI': 'GATNNNNNATC',
+    'TfiI': 'GAWTC',
+    'BsrDI': 'GCAATG',
+    'Nb.BsrDI': 'GCAATG',
+    'BbvI': 'GCAGC',
+    'BtsI-v2': 'GCAGTG',
+    'Nb.BtsI': 'GCAGTG',
+    'BstAPI': 'GCANNNNNTGC',
+    'SfaNI': 'GCATC',
+    'SphI-HF': 'GCATGC',
+    'SphI': 'GCATGC',
+    'SrfI': 'GCCCGGGC',
+    'NmeAIII': 'GCCGAG',
+    'NgoMIV': 'GCCGGC',
+    'NaeI': 'GCCGGC',
+    'BglI': 'GCCNNNNNGCC',
+    'AsiSI': 'GCGATCGC',
+    'BtgZI': 'GCGATG',
+    'HinP1I': 'GCGC',
+    'HhaI': 'GCGC',
+    'BssHII': 'GCGCGC',
+    'NotI-HF': 'GCGGCCGC',
+    'NotI': 'GCGGCCGC',
+    'Fnu4HI': 'GCNGC',
+    'Cac8I': 'GCNNGC',
+    'MwoI': 'GCNNNNNNNCC',
+    'BmtI-HF': 'GCTAGC',
+    'NheI-HF': 'GCTAGC',
+    'BspQI-HF': 'GCTCTTC',
+    'BspQI': 'GCTCTTC',
+    'SapI': 'GCTCTTC',
+    'Nt.BspQI': 'GCTCTTC',
+    'BlpI': 'GCTNAGC',
+    'ApeKI': 'GCWGC',
+    'TseI': 'GCWGC',
+    'Bsp1286I': 'GDGCHC',
+    'AlwI': 'GGATC',
+    'BamHI-HF': 'GGATCC',
+    'BamHI': 'GGATCC',
+    'Nt.AlwI': 'GGATC',
+    'FokI': 'GGATG',
+    'BtsCI': 'GGATG',
+    'HaeIII': 'GGCC',
+    'FseI': 'GGCCGGCC',
+    'SfiI': 'GGCCNNNNNGGCC',
+    'NarI': 'GGCGCC',
+    'SfoI': 'GGCGCC',
+    'PluTI': 'GGCGCC',
+    'KasI': 'GGCGCC',
+    'AscI': 'GGCGCGCC',
+    'EciI': 'GGCGGA',
+    'BsmFI': 'GGGAC',
+    'ApaI': 'GGGCCC',
+    'PspOMI': 'GGGCCC',
+    'Sau96I': 'GGNCC',
+    'NlaIV': 'GGNNCC',
+    'KpnI-HF': 'GGTACC',
+    'Acc65I': 'GGTACC',
+    'BsaI-HF': 'GGTCTC',
+    'HphI': 'GGTGA',
+    'BstEII-HF': 'GGTNACC',
+    'AvaII': 'GGWCC',
+    'BanI': 'GGYRCC',
+    'BaeGI': 'GKGCMC',
+    'BsaHI': 'GRCGYC',
+    'BanII': 'GRGCYC',
+    'CviQI': 'GTAC',
+    'RsaI': 'GTAC',
+    'BstZ17I-HF': 'GTATAC',
+    'BciVI': 'GTATCC',
+    'SalI': 'GTCGAC',
+    'SalI-HF': 'GTCGAC',
+    'BsmAI': 'GTCTC',
+    'BcoDI': 'GTCTC',
+    'Nt.BsmAI': 'GTCTC',
+    'ApaLI': 'GTGCAC',
+    'BsgI': 'GTGCAG',
+    'AccI': 'GTMKAC',
+    'Hpy166II': 'GTNNAC',
+    'Tsp45I': 'GTSAC',
+    'HpaI': 'GTTAAC',
+    'PmeI': 'GTTTAAAC',
+    'HincII': 'GTYRAC',
+    'BsiHKAI': 'GWGCWC',
+    'TspRI': 'NNCASTGNN',
+    'ApoI-HF': 'RAATTY',
+    'NspI': 'RCATGY',
+    'BsrFI-v2': 'RCCGGY',
+    'BstYI': 'RGATCY',
+    'HaeII': 'RGCGCY',
+    'CviKI-1': 'RGCY',
+    'EcoO109I': 'RGGNCCY',
+    'PpuMI': 'RGGWCCY',
+    'I-CeuI': 'TAACTATAACGGTCCTAAGGTAGCGAA',
+    'SnaBI': 'TACGTA',
+    'I-SceI': 'TAGGGATAACAGGGTAAT',
+    'BspHI': 'TCATGA',
+    'BspEI': 'TCCGGA',
+    'MmeI': 'TCCRAC',
+    'TaqI-v2': 'TCGA',
+    'NruI-HF': 'TCGCGA',
+    'Hpy188I': 'TCNGA',
+    'Hpy188III': 'TCNNGA',
+    'XbaI': 'TCTAGA',
+    'BclI': 'TGATCA',
+    'BclI-HF': 'TGATCA',
+    'HpyCH4V': 'TGCA',
+    'FspI': 'TGCGCA',
+    'PI-PspI': 'TGGCAAACAGCTATTATGGGTATTATGGGT',
+    'MscI': 'TGGCCA',
+    'BsrGI-HF': 'TGTACA',
+    'MseI': 'TTAA',
+    'PacI': 'TTAATTAA',
+    'PsiI-v2': 'TTATAA',
+    'BstBI': 'TTCGAA',
+    'DraI': 'TTTAAA',
+    'PspXI': 'VCTCGAGB',
+    'BsaWI': 'WCCGGW',
+    'BsaAI': 'YACGTR',
+    'EaeI': 'YGGCCR'
+}
+
 def design_primers(
     target_sequence,
     parent_sequence="",
@@ -106,6 +374,38 @@ Tm Difference: {abs(fwd.tm_total - rev.tm_total):.1f}°C
     except Exception as e:
         return f"Error designing primers: {str(e)}", "", ""
 
+def get_enzyme_suggestions(query):
+    """Get enzyme suggestions based on name or sequence."""
+    if not query:
+        return []
+    
+    query = query.upper()
+    suggestions = []
+    
+    # First try to match enzyme names
+    for enzyme, sequence in RESTRICTION_ENZYMES.items():
+        if enzyme.upper().startswith(query):
+            suggestions.append(f"{enzyme} ({sequence})")
+    
+    # Then try to match sequences
+    for enzyme, sequence in RESTRICTION_ENZYMES.items():
+        if sequence.startswith(query) and f"{enzyme} ({sequence})" not in suggestions:
+            suggestions.append(f"{enzyme} ({sequence})")
+    
+    return suggestions[:10]  # Limit to 10 suggestions
+
+def extract_sequence_from_selection(selection):
+    """Extract the recognition sequence from the dropdown selection."""
+    if not selection or '(' not in selection:
+        return selection
+    
+    # Extract sequence from "EnzymeName (SEQUENCE)" format
+    start = selection.find('(') + 1
+    end = selection.find(')')
+    if start > 0 and end > start:
+        return selection[start:end]
+    return selection
+
 # Streamlit app
 st.set_page_config(
     page_title="DNA Primer Designer",
@@ -116,8 +416,8 @@ st.set_page_config(
 st.title("🧬 DNA Primer Designer")
 st.markdown("Design optimal PCR primers for your DNA sequences using the `primers` Python library.")
 
-# Create two columns for layout
-col1, col2 = st.columns([2, 1])
+# Create main layout with proper spacing
+col1, col2 = st.columns([3, 2], gap="large")
 
 with col1:
     st.markdown("### Input Sequences")
@@ -125,28 +425,66 @@ with col1:
     target_seq = st.text_area(
         "Target DNA Sequence (Required)",
         placeholder="Enter your target DNA sequence (A, T, C, G only)",
-        height=100
+        height=100,
+        key="target_seq_input"
     )
     
     parent_seq = st.text_area(
         "Parent Sequence (Optional - for off-target checking)",
         placeholder="Enter parent sequence to check for off-target binding",
-        height=80
+        height=80,
+        key="parent_seq_input"
     )
     
     st.markdown("### Primer Additions")
+    st.markdown("*Add restriction enzyme recognition sites or custom sequences to your primers*")
     
+    # Forward primer addition with smart enzyme selection
     col1a, col1b = st.columns(2)
+    
     with col1a:
-        add_fwd = st.text_input(
-            "Forward Primer Addition (Optional)",
-            placeholder="e.g., GGTCTC (BsaI recognition site)"
+        st.markdown("**Forward Primer Addition**")
+        fwd_enzyme_input = st.text_input(
+            "Type enzyme name or sequence",
+            placeholder="e.g., BsaI or GGTCTC",
+            key="fwd_enzyme_search",
+            label_visibility="collapsed"
         )
+        
+        # Get suggestions for forward primer
+        fwd_suggestions = get_enzyme_suggestions(fwd_enzyme_input)
+        if fwd_suggestions:
+            fwd_selected = st.selectbox(
+                "Select enzyme (Forward)",
+                options=[""] + fwd_suggestions,
+                key="fwd_enzyme_select",
+                label_visibility="collapsed"
+            )
+            add_fwd = extract_sequence_from_selection(fwd_selected) if fwd_selected else fwd_enzyme_input
+        else:
+            add_fwd = fwd_enzyme_input
+    
     with col1b:
-        add_rev = st.text_input(
-            "Reverse Primer Addition (Optional)",
-            placeholder="e.g., GAAGAC (BpiI recognition site)"
+        st.markdown("**Reverse Primer Addition**")
+        rev_enzyme_input = st.text_input(
+            "Type enzyme name or sequence",
+            placeholder="e.g., BpiI or GAAGAC",
+            key="rev_enzyme_search",
+            label_visibility="collapsed"
         )
+        
+        # Get suggestions for reverse primer
+        rev_suggestions = get_enzyme_suggestions(rev_enzyme_input)
+        if rev_suggestions:
+            rev_selected = st.selectbox(
+                "Select enzyme (Reverse)",
+                options=[""] + rev_suggestions,
+                key="rev_enzyme_select",
+                label_visibility="collapsed"
+            )
+            add_rev = extract_sequence_from_selection(rev_selected) if rev_selected else rev_enzyme_input
+        else:
+            add_rev = rev_enzyme_input
 
 with col2:
     st.markdown("### Primer Parameters")
@@ -224,7 +562,8 @@ with col2:
         help="Penalizes free energy in secondary structures (higher |ΔG| = more stable structures)"
     )
 
-# Design button
+# Design button with better spacing
+st.markdown("---")
 if st.button("🔬 Design Primers", type="primary", use_container_width=True):
     if target_seq.strip():
         with st.spinner("Designing primers..."):
@@ -274,19 +613,20 @@ if st.button("🔬 Design Primers", type="primary", use_container_width=True):
     else:
         st.error("Please enter a target DNA sequence.")
 
-# Examples section
+# Examples section with better formatting
+st.markdown("---")
 st.markdown("### 📋 Example Sequences")
 
 examples = [
     {
-        "name": "Example 1: Basic sequence with additions",
+        "name": "Example 1: Basic sequence with BsaI/BpiI sites",
         "target": "AATGAGACAATAGCACACACAGCTAGGTCAGCATACGAAA",
         "parent": "",
         "fwd_add": "GGTCTC",
         "rev_add": "GAAGAC"
     },
     {
-        "name": "Example 2: Simple sequence",
+        "name": "Example 2: Simple sequence without additions",
         "target": "ATGAAACGCATTAGCACTGGGCCTAAGTACGAATTC",
         "parent": "",
         "fwd_add": "",
