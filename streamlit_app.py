@@ -178,9 +178,11 @@ def setup_textcomplete_enzyme_input(label, key, placeholder="e.g., BsaI or GGTCT
             max_chars=50
         )
         
-        # Create the search function that returns enzyme suggestions
-        def create_search_function():
-            return f"""
+        # Create autocomplete strategy with correct search function
+        enzyme_strategy = StrategyProps(
+            id=f"enzyme_{key}",
+            match=r"(\w*)$",  # Match word characters at end of input
+            search=f"""
             async (term, callback) => {{
                 const enzymes = {json.dumps([
                     {"name": enzyme, "sequence": sequence, "display": f"{enzyme} ({sequence})"}
@@ -198,23 +200,16 @@ def setup_textcomplete_enzyme_input(label, key, placeholder="e.g., BsaI or GGTCT
                 
                 callback(results);
             }}
-            """
-        
-        # Create autocomplete strategy
-        enzyme_strategy = StrategyProps(
-            id=f"enzyme_{key}",
-            match=r"(\w*)$",  # Match word characters at end of input
-            search=create_search_function(),
+            """,
             replace="(value) => value.split(' ')[0]",  # Extract just the enzyme name
             template="(value) => `🧬 ${value}`",
         )
         
-        # Initialize textcomplete with proper configuration
+        # Initialize textcomplete with correct parameters
         textcomplete(
             area_label=label,
             strategies=[enzyme_strategy],
-            max_count=10,
-            dropdown_className="enzyme-autocomplete-dropdown"
+            max_count=10
         )
         
         return enzyme_input.strip() if enzyme_input else ""
