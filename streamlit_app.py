@@ -149,6 +149,16 @@ st.set_page_config(
 st.title("🧬 DNA Primer Designer")
 st.markdown("Design optimal PCR primers for your DNA sequences using the `primers` Python library.")
 
+# Initialize session state variables if they don't exist
+if 'target_seq_input' not in st.session_state:
+    st.session_state.target_seq_input = ""
+if 'parent_seq_input' not in st.session_state:
+    st.session_state.parent_seq_input = ""
+if 'fwd_enzyme_search' not in st.session_state:
+    st.session_state.fwd_enzyme_search = ""
+if 'rev_enzyme_search' not in st.session_state:
+    st.session_state.rev_enzyme_search = ""
+
 # Create main layout with proper spacing
 col1, col2 = st.columns([3, 2], gap="large")
 
@@ -172,52 +182,68 @@ with col1:
     st.markdown("### Primer Additions")
     st.markdown("*Add restriction enzyme recognition sites or custom sequences to your primers*")
     
-    # Forward primer addition with smart enzyme selection
+    # Forward and reverse primer additions with live suggestions
     col1a, col1b = st.columns(2)
     
     with col1a:
         st.markdown("**Forward Primer Addition**")
+        
+        # Get current input for forward primer
         fwd_enzyme_input = st.text_input(
             "Type enzyme name or sequence",
             placeholder="e.g., BsaI or GGTCTC",
-            key="fwd_enzyme_search",
-            label_visibility="collapsed"
+            key="fwd_enzyme_search"
         )
         
-        # Get suggestions for forward primer
-        fwd_suggestions = get_enzyme_suggestions(fwd_enzyme_input)
-        if fwd_suggestions:
-            fwd_selected = st.selectbox(
-                "Select enzyme (Forward)",
-                options=[""] + fwd_suggestions,
-                key="fwd_enzyme_select",
-                label_visibility="collapsed"
-            )
-            add_fwd = extract_sequence_from_selection(fwd_selected) if fwd_selected else fwd_enzyme_input
+        # Show live suggestions if there's input
+        if fwd_enzyme_input:
+            fwd_suggestions = get_enzyme_suggestions(fwd_enzyme_input)
+            if fwd_suggestions:
+                fwd_selected = st.selectbox(
+                    "Select from suggestions:",
+                    options=["Use typed input"] + fwd_suggestions,
+                    key="fwd_enzyme_select"
+                )
+                
+                if fwd_selected == "Use typed input":
+                    add_fwd = fwd_enzyme_input
+                else:
+                    add_fwd = extract_sequence_from_selection(fwd_selected)
+            else:
+                add_fwd = fwd_enzyme_input
+                st.info("No matching enzymes found. Using custom sequence.")
         else:
-            add_fwd = fwd_enzyme_input
+            add_fwd = ""
     
     with col1b:
         st.markdown("**Reverse Primer Addition**")
+        
+        # Get current input for reverse primer
         rev_enzyme_input = st.text_input(
             "Type enzyme name or sequence",
             placeholder="e.g., BpiI or GAAGAC",
-            key="rev_enzyme_search",
-            label_visibility="collapsed"
+            key="rev_enzyme_search"
         )
         
-        # Get suggestions for reverse primer
-        rev_suggestions = get_enzyme_suggestions(rev_enzyme_input)
-        if rev_suggestions:
-            rev_selected = st.selectbox(
-                "Select enzyme (Reverse)",
-                options=[""] + rev_suggestions,
-                key="rev_enzyme_select",
-                label_visibility="collapsed"
-            )
-            add_rev = extract_sequence_from_selection(rev_selected) if rev_selected else rev_enzyme_input
+        # Show live suggestions if there's input
+        if rev_enzyme_input:
+            rev_suggestions = get_enzyme_suggestions(rev_enzyme_input)
+            if rev_suggestions:
+                rev_selected = st.selectbox(
+                    "Select from suggestions:",
+                    options=["Use typed input"] + rev_suggestions,
+                    key="rev_enzyme_select"
+                )
+                
+                if rev_selected == "Use typed input":
+                    add_rev = rev_enzyme_input
+                else:
+                    add_rev = extract_sequence_from_selection(rev_selected)
+            else:
+                add_rev = rev_enzyme_input
+                st.info("No matching enzymes found. Using custom sequence.")
         else:
-            add_rev = rev_enzyme_input
+            add_rev = ""
 
 with col2:
     st.markdown("### Primer Parameters")
@@ -380,14 +406,17 @@ selected_example = st.selectbox(
     key="example_selector"
 )
 
-if selected_example:
+if selected_example and st.button("Load Example", key="load_example"):
     example = next(ex for ex in examples if ex["name"] == selected_example)
-    if st.button("Load Example", key="load_example"):
-        st.session_state.target_seq = example["target"]
-        st.session_state.parent_seq = example["parent"]
-        st.session_state.add_fwd = example["fwd_add"]
-        st.session_state.add_rev = example["rev_add"]
-        st.rerun()
+    
+    # Update session state with the correct keys
+    st.session_state.target_seq_input = example["target"]
+    st.session_state.parent_seq_input = example["parent"]
+    st.session_state.fwd_enzyme_search = example["fwd_add"]
+    st.session_state.rev_enzyme_search = example["rev_add"]
+    
+    st.success(f"Loaded: {selected_example}")
+    st.rerun()
 
 # Instructions
 st.markdown("""
@@ -396,6 +425,9 @@ st.markdown("""
 1. **Target Sequence**: Enter your DNA sequence of interest (required)
 2. **Parent Sequence**: Optionally provide a larger sequence context to check for off-target binding
 3. **Primer Additions**: Add restriction enzyme sites or other sequences to your primers
+   - Type enzyme names (e.g., "BsaI") or sequences (e.g., "GGTCTC")
+   - Live suggestions will appear as you type
+   - Select from suggestions or use your custom input
 4. **Optimal Parameters**: Set target values for primer characteristics
 5. **Penalty Weights**: Adjust how strongly deviations from optimal are penalized
 6. **Click "Design Primers"** to generate optimal forward and reverse primers
