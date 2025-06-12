@@ -199,9 +199,9 @@ with col1:
     )
     st.markdown("### Primer Additions")
     if TEXTCOMPLETE_AVAILABLE:
-        st.markdown("💡 Type restriciton enzyme name or restriction!")
+        st.markdown("💡 Type restriction enzyme name or restriction site!")
     else:
-        st.markdown("💡  Type restriciton enzyme name or restriction.")
+        st.markdown("💡  Type restriction enzyme name or restriction site.")
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("**Forward Primer Addition**")
