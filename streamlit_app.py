@@ -2,6 +2,15 @@ import streamlit as st
 from primers import create
 from restriction_enzymes import RESTRICTION_ENZYMES
 import pandas as pd
+import json
+
+# Try to import textcomplete, fall back to original implementation if not available
+try:
+    from textcomplete import textcomplete, StrategyProps
+    TEXTCOMPLETE_AVAILABLE = True
+except ImportError:
+    TEXTCOMPLETE_AVAILABLE = False
+    st.warning("streamlit-textcomplete not installed. Using fallback autocomplete. Install with: pip install streamlit-textcomplete")
 
 def design_primers(
     target_sequence,
@@ -139,6 +148,88 @@ def extract_sequence_from_selection(selection):
         return selection[start:end]
     return selection
 
+def create_enzyme_search_js():
+    """Create JavaScript search function for enzyme autocomplete."""
+    # Convert enzyme database to JavaScript format
+    enzymes_js = json.dumps([
+        {"name": enzyme, "sequence": sequence, "display": f"{enzyme} ({sequence})"}
+        for enzyme, sequence in RESTRICTION_ENZYMES.items()
+    ])
+    
+    # JavaScript search function
+    search_function = f"""
+    async (term) => {{
+        const enzymes = {enzymes_js};
+        const query = term.toLowerCase();
+        return enzymes
+            .filter(enzyme => 
+                enzyme.name.toLowerCase().includes(query) || 
+                enzyme.sequence.toLowerCase().includes(query)
+            )
+            .slice(0, 10)
+            .map(enzyme => enzyme.display);
+    }}
+    """
+    
+    return search_function
+
+def setup_textcomplete_enzyme_input(label, key, placeholder="e.g., BsaI or GGTCTC"):
+    """Setup enzyme input with textcomplete autocomplete if available."""
+    if TEXTCOMPLETE_AVAILABLE:
+        # Create text area with unique label
+        enzyme_input = st.text_area(
+            label=label,
+            placeholder=placeholder,
+            height=60,
+            key=key,
+            max_chars=50
+        )
+        
+        # Create autocomplete strategy
+        enzyme_strategy = StrategyProps(
+            id=f"enzyme_{key}",
+            match=r"(\w*)$",  # Match word characters at end of line
+            search=create_enzyme_search_js(),
+            replace="(value) => value.split(' ')[0]",  # Extract just the enzyme name
+            template="(value) => `🧬 ${value}`",
+        )
+        
+        # Initialize textcomplete
+        textcomplete(
+            area_label=label,
+            strategies=[enzyme_strategy],
+            max_count=10,
+        )
+        
+        return enzyme_input
+    else:
+        # Fallback to original implementation
+        enzyme_input = st.text_input(
+            label,
+            placeholder=placeholder,
+            key=key
+        )
+        
+        # Show live suggestions if there's input
+        if enzyme_input:
+            suggestions = get_enzyme_suggestions(enzyme_input)
+            if suggestions:
+                selected = st.selectbox(
+                    "Select from suggestions:",
+                    options=["Use typed input"] + suggestions,
+                    key=f"{key}_select"
+                )
+                
+                if selected == "Use typed input":
+                    return enzyme_input
+                else:
+                    return extract_sequence_from_selection(selected)
+            else:
+                st.info("No matching enzymes found. Using custom sequence.")
+                return enzyme_input
+        
+        return enzyme_input
+
 # Streamlit app
 st.set_page_config(
     page_title="DNA Primer Designer",
@@ -154,10 +245,6 @@ if 'target_seq_input' not in st.session_state:
     st.session_state.target_seq_input = ""
 if 'parent_seq_input' not in st.session_state:
     st.session_state.parent_seq_input = ""
-if 'fwd_enzyme_search' not in st.session_state:
-    st.session_state.fwd_enzyme_search = ""
-if 'rev_enzyme_search' not in st.session_state:
-    st.session_state.rev_enzyme_search = ""
 
 # Create main layout with proper spacing
 col1, col2 = st.columns([3, 2], gap="large")
@@ -182,68 +269,27 @@ with col1:
     st.markdown("### Primer Additions")
     st.markdown("*Add restriction enzyme recognition sites or custom sequences to your primers*")
     
-    # Forward and reverse primer additions with live suggestions
+    if TEXTCOMPLETE_AVAILABLE:
+        st.markdown("💡 **Pro tip**: Start typing enzyme names for autocomplete suggestions!")
+    
+    # Forward and reverse primer additions with autocomplete
     col1a, col1b = st.columns(2)
     
     with col1a:
         st.markdown("**Forward Primer Addition**")
-        
-        # Get current input for forward primer
-        fwd_enzyme_input = st.text_input(
-            "Type enzyme name or sequence",
-            placeholder="e.g., BsaI or GGTCTC",
-            key="fwd_enzyme_search"
+        add_fwd = setup_textcomplete_enzyme_input(
+            "Forward Enzyme/Sequence",
+            "fwd_enzyme_input",
+            "e.g., BsaI or GGTCTC"
         )
-        
-        # Show live suggestions if there's input
-        if fwd_enzyme_input:
-            fwd_suggestions = get_enzyme_suggestions(fwd_enzyme_input)
-            if fwd_suggestions:
-                fwd_selected = st.selectbox(
-                    "Select from suggestions:",
-                    options=["Use typed input"] + fwd_suggestions,
-                    key="fwd_enzyme_select"
-                )
-                
-                if fwd_selected == "Use typed input":
-                    add_fwd = fwd_enzyme_input
-                else:
-                    add_fwd = extract_sequence_from_selection(fwd_selected)
-            else:
-                add_fwd = fwd_enzyme_input
-                st.info("No matching enzymes found. Using custom sequence.")
-        else:
-            add_fwd = ""
     
     with col1b:
         st.markdown("**Reverse Primer Addition**")
-        
-        # Get current input for reverse primer
-        rev_enzyme_input = st.text_input(
-            "Type enzyme name or sequence",
-            placeholder="e.g., BpiI or GAAGAC",
-            key="rev_enzyme_search"
+        add_rev = setup_textcomplete_enzyme_input(
+            "Reverse Enzyme/Sequence", 
+            "rev_enzyme_input",
+            "e.g., BpiI or GAAGAC"
         )
-        
-        # Show live suggestions if there's input
-        if rev_enzyme_input:
-            rev_suggestions = get_enzyme_suggestions(rev_enzyme_input)
-            if rev_suggestions:
-                rev_selected = st.selectbox(
-                    "Select from suggestions:",
-                    options=["Use typed input"] + rev_suggestions,
-                    key="rev_enzyme_select"
-                )
-                
-                if rev_selected == "Use typed input":
-                    add_rev = rev_enzyme_input
-                else:
-                    add_rev = extract_sequence_from_selection(rev_selected)
-            else:
-                add_rev = rev_enzyme_input
-                st.info("No matching enzymes found. Using custom sequence.")
-        else:
-            add_rev = ""
 
 with col2:
     st.markdown("### Primer Parameters")
@@ -378,8 +424,8 @@ st.markdown("### 📋 Example Sequences")
 st.markdown("""
 **Example 1: Basic sequence with BsaI/BpiI sites**
 - Target: `AATGAGACAATAGCACACACAGCTAGGTCAGCATACGAAA`
-- Forward addition: `GGTCTC` (BsaI)
-- Reverse addition: `GAAGAC` (BpiI)
+- Forward addition: `GGTCTC` (BsaI) or just type "BsaI"
+- Reverse addition: `GAAGAC` (BpiI) or just type "BpiI"
 
 **Example 2: Simple sequence without additions**
 - Target: `ATGAAACGCATTAGCACTGGGCCTAAGTACGAATTC`
@@ -396,9 +442,9 @@ st.markdown("""
 1. **Target Sequence**: Enter your DNA sequence of interest (required)
 2. **Parent Sequence**: Optionally provide a larger sequence context to check for off-target binding
 3. **Primer Additions**: Add restriction enzyme sites or other sequences to your primers
-   - Type enzyme names (e.g., "BsaI") or sequences (e.g., "GGTCTC")
+   - With autocomplete: Start typing enzyme names (e.g., "Bsa") and select from suggestions
+   - Fallback mode: Type enzyme names (e.g., "BsaI") or sequences (e.g., "GGTCTC")
    - Live suggestions will appear as you type
-   - Select from suggestions or use your custom input
 4. **Optimal Parameters**: Set target values for primer characteristics
 5. **Penalty Weights**: Adjust how strongly deviations from optimal are penalized
 6. **Click "Design Primers"** to generate optimal forward and reverse primers
