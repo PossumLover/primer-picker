@@ -147,7 +147,7 @@ st.set_page_config(
 )
 
 st.title("🧬 DNA Primer Designer")
-st.markdown("Design optimal PCR primers for your DNA sequences using the `primers` Python library.")
+st.markdown("A simple website to help design optimal PCR primers for your DNA sequences. Built by James Warner.")
 
 # Initialize session state variables if they don't exist
 if 'target_seq_input' not in st.session_state:
@@ -372,51 +372,22 @@ if st.button("🔬 Design Primers", type="primary", use_container_width=True):
     else:
         st.error("Please enter a target DNA sequence.")
 
-# Examples section with better formatting
+# Examples section for reference
 st.markdown("---")
 st.markdown("### 📋 Example Sequences")
+st.markdown("""
+**Example 1: Basic sequence with BsaI/BpiI sites**
+- Target: `AATGAGACAATAGCACACACAGCTAGGTCAGCATACGAAA`
+- Forward addition: `GGTCTC` (BsaI)
+- Reverse addition: `GAAGAC` (BpiI)
 
-examples = [
-    {
-        "name": "Example 1: Basic sequence with BsaI/BpiI sites",
-        "target": "AATGAGACAATAGCACACACAGCTAGGTCAGCATACGAAA",
-        "parent": "",
-        "fwd_add": "GGTCTC",
-        "rev_add": "GAAGAC"
-    },
-    {
-        "name": "Example 2: Simple sequence without additions",
-        "target": "ATGAAACGCATTAGCACTGGGCCTAAGTACGAATTC",
-        "parent": "",
-        "fwd_add": "",
-        "rev_add": ""
-    },
-    {
-        "name": "Example 3: With parent sequence for off-target checking",
-        "target": "GCTAGCAATGAGACAATAGCACACACAGCTAGGTCAGCATACGAAAGATCT",
-        "parent": "ggaattacgtAATGAGACAATAGCACACACAGCTAGGTCAGCATACGAAAggaccagttacagga",
-        "fwd_add": "",
-        "rev_add": ""
-    }
-]
+**Example 2: Simple sequence without additions**
+- Target: `ATGAAACGCATTAGCACTGGGCCTAAGTACGAATTC`
 
-selected_example = st.selectbox(
-    "Choose an example to load:",
-    options=[""] + [ex["name"] for ex in examples],
-    key="example_selector"
-)
-
-if selected_example and st.button("Load Example", key="load_example"):
-    example = next(ex for ex in examples if ex["name"] == selected_example)
-    
-    # Update session state with the correct keys
-    st.session_state.target_seq_input = example["target"]
-    st.session_state.parent_seq_input = example["parent"]
-    st.session_state.fwd_enzyme_search = example["fwd_add"]
-    st.session_state.rev_enzyme_search = example["rev_add"]
-    
-    st.success(f"Loaded: {selected_example}")
-    st.rerun()
+**Example 3: With parent sequence for off-target checking**
+- Target: `GCTAGCAATGAGACAATAGCACACACAGCTAGGTCAGCATACGAAAGATCT`
+- Parent: `ggaattacgtAATGAGACAATAGCACACACAGCTAGGTCAGCATACGAAAggaccagttacagga`
+""")
 
 # Instructions
 st.markdown("""
