@@ -452,9 +452,4 @@ st.markdown("""
 **Penalty Calculation**: Each primer's penalty = |Tm deviation| × Tm penalty + |GC deviation| × GC penalty + |length deviation| × length penalty + |primer Tm difference| × Tm diff penalty + |ΔG| × ΔG penalty
 
 The algorithm selects primers with the lowest total penalty scores.
-
-**Installation Requirements:**
-```bash
-pip install streamlit-textcomplete
-```
 """)
