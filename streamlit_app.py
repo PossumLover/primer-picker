@@ -176,11 +176,11 @@ def create_enzyme_search_js():
 def setup_textcomplete_enzyme_input(label, key, placeholder="e.g., BsaI or GGTCTC"):
     """Setup enzyme input with textcomplete autocomplete if available."""
     if TEXTCOMPLETE_AVAILABLE:
-        # Create text area with unique label
+        # Create text area with unique label (minimum height is 68px)
         enzyme_input = st.text_area(
             label=label,
             placeholder=placeholder,
-            height=60,
+            height=68,
             key=key,
             max_chars=50
         )
@@ -201,7 +201,7 @@ def setup_textcomplete_enzyme_input(label, key, placeholder="e.g., BsaI or GGTCT
             max_count=10,
         )
         
-        return enzyme_input
+        return enzyme_input.strip() if enzyme_input else ""
     else:
         # Fallback to original implementation
         enzyme_input = st.text_input(
@@ -452,4 +452,9 @@ st.markdown("""
 **Penalty Calculation**: Each primer's penalty = |Tm deviation| × Tm penalty + |GC deviation| × GC penalty + |length deviation| × length penalty + |primer Tm difference| × Tm diff penalty + |ΔG| × ΔG penalty
 
 The algorithm selects primers with the lowest total penalty scores.
+
+**Installation Requirements:**
+```bash
+pip install streamlit-textcomplete
+```
 """)
