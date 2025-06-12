@@ -53,13 +53,17 @@ def design_primers(
             'penalty_dg': penalty_dg
         }
         
-        # Add forward primer additions if specified
+        # Process forward primer addition
         if add_fwd.strip():
-            kwargs['add_fwd'] = add_fwd.strip().upper()
+            fwd_sequence = process_enzyme_input(add_fwd.strip())
+            if fwd_sequence:
+                kwargs['add_fwd'] = fwd_sequence
         
-        # Add reverse primer additions if specified
+        # Process reverse primer addition
         if add_rev.strip():
-            kwargs['add_rev'] = add_rev.strip().upper()
+            rev_sequence = process_enzyme_input(add_rev.strip())
+            if rev_sequence:
+                kwargs['add_rev'] = rev_sequence
         
         # Add parent sequence for off-target checking if specified
         if parent_sequence.strip():
@@ -116,6 +120,25 @@ Tm Difference: {abs(fwd.tm_total - rev.tm_total):.1f}°C
     except Exception as e:
         return f"Error designing primers: {str(e)}", "", ""
 
+def process_enzyme_input(input_text):
+    """
+    Process enzyme input - convert enzyme name to sequence if needed.
+    Returns the DNA sequence to be added to the primer.
+    """
+    input_text = input_text.strip().upper()
+    
+    # Check if input is an enzyme name
+    if input_text in RESTRICTION_ENZYMES:
+        return RESTRICTION_ENZYMES[input_text]
+    
+    # Check if input is already a DNA sequence
+    valid_bases = set('ATCG')
+    if all(base in valid_bases for base in input_text):
+        return input_text
+    
+    # If not found and not a valid sequence, return as-is (let primers library handle)
+    return input_text
+
 def get_enzyme_suggestions(query):
     """Get enzyme suggestions based on name or sequence."""
     if not query:
@@ -124,7 +147,7 @@ def get_enzyme_suggestions(query):
     query = query.upper()
     suggestions = []
     
-    # First try to match enzyme names
+    # First try to match enzyme names (prioritize exact prefix matches)
     for enzyme, sequence in RESTRICTION_ENZYMES.items():
         if enzyme.upper().startswith(query):
             suggestions.append(f"{enzyme} ({sequence})")
@@ -136,74 +159,67 @@ def get_enzyme_suggestions(query):
     
     return suggestions[:10]  # Limit to 10 suggestions
 
-def extract_sequence_from_selection(selection):
-    """Extract the recognition sequence from the dropdown selection."""
+def extract_enzyme_name_from_selection(selection):
+    """Extract the enzyme name from the dropdown selection."""
     if not selection or '(' not in selection:
         return selection
     
-    # Extract sequence from "EnzymeName (SEQUENCE)" format
-    start = selection.find('(') + 1
-    end = selection.find(')')
-    if start > 0 and end > start:
-        return selection[start:end]
-    return selection
-
-def create_enzyme_search_js():
-    """Create JavaScript search function for enzyme autocomplete."""
-    # Convert enzyme database to JavaScript format
-    enzymes_js = json.dumps([
-        {"name": enzyme, "sequence": sequence, "display": f"{enzyme} ({sequence})"}
-        for enzyme, sequence in RESTRICTION_ENZYMES.items()
-    ])
-    
-    # JavaScript search function
-    search_function = f"""
-    async (term) => {{
-        const enzymes = {enzymes_js};
-        const query = term.toLowerCase();
-        return enzymes
-            .filter(enzyme => 
-                enzyme.name.toLowerCase().includes(query) || 
-                enzyme.sequence.toLowerCase().includes(query)
-            )
-            .slice(0, 10)
-            .map(enzyme => enzyme.display);
-    }}
-    """
-    
-    return search_function
+    # Extract enzyme name from "EnzymeName (SEQUENCE)" format
+    return selection.split(' (')[0]
 
 def setup_textcomplete_enzyme_input(label, key, placeholder="e.g., BsaI or GGTCTC"):
     """Setup enzyme input with textcomplete autocomplete if available."""
     if TEXTCOMPLETE_AVAILABLE:
-        # Create text area with unique label (minimum height is 68px)
-        enzyme_input = st.text_area(
+        # Create text input instead of text area for better autocomplete experience
+        enzyme_input = st.text_input(
             label=label,
             placeholder=placeholder,
-            height=68,
             key=key,
             max_chars=50
         )
         
+        # Create the search function that returns enzyme suggestions
+        def create_search_function():
+            return f"""
+            async (term, callback) => {{
+                const enzymes = {json.dumps([
+                    {"name": enzyme, "sequence": sequence, "display": f"{enzyme} ({sequence})"}
+                    for enzyme, sequence in RESTRICTION_ENZYMES.items()
+                ])};
+                
+                const query = term.toLowerCase();
+                const results = enzymes
+                    .filter(enzyme => 
+                        enzyme.name.toLowerCase().startsWith(query) || 
+                        enzyme.sequence.toLowerCase().startsWith(query)
+                    )
+                    .slice(0, 10)
+                    .map(enzyme => enzyme.display);
+                
+                callback(results);
+            }}
+            """
+        
         # Create autocomplete strategy
         enzyme_strategy = StrategyProps(
             id=f"enzyme_{key}",
-            match=r"(\w*)$",  # Match word characters at end of line
-            search=create_enzyme_search_js(),
+            match=r"(\w*)$",  # Match word characters at end of input
+            search=create_search_function(),
             replace="(value) => value.split(' ')[0]",  # Extract just the enzyme name
             template="(value) => `🧬 ${value}`",
         )
         
-        # Initialize textcomplete
+        # Initialize textcomplete with proper configuration
         textcomplete(
             area_label=label,
             strategies=[enzyme_strategy],
             max_count=10,
+            dropdown_className="enzyme-autocomplete-dropdown"
         )
         
         return enzyme_input.strip() if enzyme_input else ""
     else:
-        # Fallback to original implementation
+        # Fallback to original implementation with improved UX
         enzyme_input = st.text_input(
             label,
             placeholder=placeholder,
@@ -211,21 +227,31 @@ def setup_textcomplete_enzyme_input(label, key, placeholder="e.g., BsaI or GGTCT
         )
         
         # Show live suggestions if there's input
-        if enzyme_input:
+        if enzyme_input and len(enzyme_input) >= 2:  # Only show suggestions after 2+ characters
             suggestions = get_enzyme_suggestions(enzyme_input)
             if suggestions:
+                # Create a more user-friendly selection
                 selected = st.selectbox(
-                    "Select from suggestions:",
-                    options=["Use typed input"] + suggestions,
-                    key=f"{key}_select"
+                    "💡 Suggestions (or continue typing):",
+                    options=["Keep typing..."] + suggestions,
+                    key=f"{key}_select",
+                    help="Select a suggestion or continue typing your own sequence"
                 )
                 
-                if selected == "Use typed input":
+                if selected == "Keep typing...":
                     return enzyme_input
                 else:
-                    return extract_sequence_from_selection(selected)
+                    # Extract enzyme name and update the input
+                    enzyme_name = extract_enzyme_name_from_selection(selected)
+                    # Use st.session_state to update the input value
+                    st.session_state[key] = enzyme_name
+                    return enzyme_name
             else:
-                st.info("No matching enzymes found. Using custom sequence.")
+                # Show helpful message when no matches found
+                if all(c in 'ATCG' for c in enzyme_input.upper()):
+                    st.info("✅ Custom DNA sequence detected")
+                else:
+                    st.info("🔍 No matching enzymes found. Try typing an enzyme name or DNA sequence.")
                 return enzyme_input
         
         return enzyme_input
@@ -271,6 +297,8 @@ with col1:
     
     if TEXTCOMPLETE_AVAILABLE:
         st.markdown("💡 **Pro tip**: Start typing enzyme names for autocomplete suggestions!")
+    else:
+        st.markdown("💡 **Tip**: Type enzyme names (e.g., 'BsaI') and select from suggestions, or enter DNA sequences directly.")
     
     # Forward and reverse primer additions with autocomplete
     col1a, col1b = st.columns(2)
@@ -282,6 +310,12 @@ with col1:
             "fwd_enzyme_input",
             "e.g., BsaI or GGTCTC"
         )
+        
+        # Show what sequence will be added
+        if add_fwd:
+            processed_seq = process_enzyme_input(add_fwd)
+            if processed_seq != add_fwd.upper():
+                st.caption(f"Will add: {processed_seq}")
     
     with col1b:
         st.markdown("**Reverse Primer Addition**")
@@ -290,6 +324,12 @@ with col1:
             "rev_enzyme_input",
             "e.g., BpiI or GAAGAC"
         )
+        
+        # Show what sequence will be added
+        if add_rev:
+            processed_seq = process_enzyme_input(add_rev)
+            if processed_seq != add_rev.upper():
+                st.caption(f"Will add: {processed_seq}")
 
 with col2:
     st.markdown("### Primer Parameters")
@@ -442,12 +482,17 @@ st.markdown("""
 1. **Target Sequence**: Enter your DNA sequence of interest (required)
 2. **Parent Sequence**: Optionally provide a larger sequence context to check for off-target binding
 3. **Primer Additions**: Add restriction enzyme sites or other sequences to your primers
-   - With autocomplete: Start typing enzyme names (e.g., "Bsa") and select from suggestions
-   - Fallback mode: Type enzyme names (e.g., "BsaI") or sequences (e.g., "GGTCTC")
-   - Live suggestions will appear as you type
+   - **With autocomplete**: Start typing enzyme names (e.g., "Bsa") and select from suggestions
+   - **Fallback mode**: Type enzyme names (e.g., "BsaI") or sequences (e.g., "GGTCTC") directly
+   - The system will automatically convert enzyme names to their recognition sequences
 4. **Optimal Parameters**: Set target values for primer characteristics
 5. **Penalty Weights**: Adjust how strongly deviations from optimal are penalized
 6. **Click "Design Primers"** to generate optimal forward and reverse primers
+
+**How Enzyme Input Works:**
+- Type enzyme names like "BsaI", "BpiI", "EcoRI" - they'll be converted to recognition sequences
+- Or enter DNA sequences directly like "GGTCTC", "GAAGAC"
+- Autocomplete suggestions show both enzyme name and sequence for reference
 
 **Penalty Calculation**: Each primer's penalty = |Tm deviation| × Tm penalty + |GC deviation| × GC penalty + |length deviation| × length penalty + |primer Tm difference| × Tm diff penalty + |ΔG| × ΔG penalty
 
