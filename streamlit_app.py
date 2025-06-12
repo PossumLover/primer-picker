@@ -4,13 +4,19 @@ from restriction_enzymes import RESTRICTION_ENZYMES
 import pandas as pd
 import json
 
-# Try to import textcomplete, fall back to original implementation if not available
+# Try to import textcomplete for autocomplete; fall back if unavailable
 try:
     from textcomplete import textcomplete, StrategyProps
     TEXTCOMPLETE_AVAILABLE = True
 except ImportError:
     TEXTCOMPLETE_AVAILABLE = False
-    st.warning("streamlit-textcomplete not installed. Using fallback autocomplete. Install with: pip install streamlit-textcomplete")
+    st.warning("streamlit-textcomplete not installed. Install with: pip install streamlit-textcomplete")
+
+# Pre-serialize your enzyme list for the JS search function
+_ENZYME_LIST_JSON = json.dumps([
+    {"name": name, "seq": seq}
+    for name, seq in RESTRICTION_ENZYMES.items()
+])
 
 def design_primers(
     target_sequence,
@@ -28,56 +34,52 @@ def design_primers(
 ):
     """
     Design primers for a given DNA sequence using the primers library.
+    Returns (results_text, forward_seq, reverse_seq)
     """
     if not target_sequence.strip():
         return "Error: Please provide a target DNA sequence.", "", ""
     
-    # Clean up the sequence (remove whitespace and convert to uppercase)
-    target_sequence = target_sequence.strip().upper().replace(" ", "").replace("\n", "")
-    
-    # Validate DNA sequence
-    valid_bases = set('ATCG')
-    if not all(base in valid_bases for base in target_sequence):
+    # Clean up and validate the target
+    seq = target_sequence.upper().replace(" ", "").replace("\n", "")
+    if not set(seq).issubset(set("ATCG")):
         return "Error: Target sequence contains invalid characters. Only A, T, C, G are allowed.", "", ""
     
+    # Build kwargs
+    kwargs = {
+        'optimal_tm': optimal_tm,
+        'optimal_gc': optimal_gc,
+        'optimal_len': int(optimal_len),
+        'penalty_tm': penalty_tm,
+        'penalty_gc': penalty_gc,
+        'penalty_len': penalty_len,
+        'penalty_tm_diff': penalty_tm_diff,
+        'penalty_dg': penalty_dg
+    }
+    
+    # Process any additions
+    if add_fwd.strip():
+        fwd_seq = process_enzyme_input(add_fwd.strip())
+        if fwd_seq:
+            kwargs['add_fwd'] = fwd_seq
+    if add_rev.strip():
+        rev_seq = process_enzyme_input(add_rev.strip())
+        if rev_seq:
+            kwargs['add_rev'] = rev_seq
+    
+    # Off-target check
+    if parent_sequence.strip():
+        parent = parent_sequence.upper().replace(" ", "").replace("\n", "")
+        if not set(parent).issubset(set("ATCG")):
+            return "Error: Parent sequence contains invalid characters. Only A, T, C, G are allowed.", "", ""
+        kwargs['offtarget_check'] = parent
+    
     try:
-        # Prepare arguments for primers.create()
-        kwargs = {
-            'optimal_tm': optimal_tm,
-            'optimal_gc': optimal_gc,
-            'optimal_len': int(optimal_len),
-            'penalty_tm': penalty_tm,
-            'penalty_gc': penalty_gc,
-            'penalty_len': penalty_len,
-            'penalty_tm_diff': penalty_tm_diff,
-            'penalty_dg': penalty_dg
-        }
-        
-        # Process forward primer addition
-        if add_fwd.strip():
-            fwd_sequence = process_enzyme_input(add_fwd.strip())
-            if fwd_sequence:
-                kwargs['add_fwd'] = fwd_sequence
-        
-        # Process reverse primer addition
-        if add_rev.strip():
-            rev_sequence = process_enzyme_input(add_rev.strip())
-            if rev_sequence:
-                kwargs['add_rev'] = rev_sequence
-        
-        # Add parent sequence for off-target checking if specified
-        if parent_sequence.strip():
-            parent_sequence = parent_sequence.strip().upper().replace(" ", "").replace("\n", "")
-            # Validate parent sequence
-            if not all(base in valid_bases for base in parent_sequence):
-                return "Error: Parent sequence contains invalid characters. Only A, T, C, G are allowed.", "", ""
-            kwargs['offtarget_check'] = parent_sequence
-        
-        # Create primers
-        fwd, rev = create(target_sequence, **kwargs)
-        
-        # Format results
-        results_text = f"""
+        fwd, rev = create(seq, **kwargs)
+    except Exception as e:
+        return f"Error designing primers: {e}", "", ""
+    
+    # Format results text
+    results = f"""
 PRIMER DESIGN RESULTS
 ====================
 
@@ -100,158 +102,70 @@ Free Energy (ΔG): {rev.dg:.2f} kcal/mol
 PRIMER PAIR ANALYSIS:
 Tm Difference: {abs(fwd.tm_total - rev.tm_total):.1f}°C
 """
-        
-        # Create CSV data for download
-        primer_data = {
-            'Primer': ['Forward', 'Reverse'],
-            'Sequence_5_to_3': [fwd.seq, rev.seq],
-            'Length_bp': [len(fwd.seq), len(rev.seq)],
-            'Tm_C': [fwd.tm, rev.tm],
-            'Total_Tm_C': [fwd.tm_total, rev.tm_total],
-            'GC_Content': [fwd.gc, rev.gc],
-            'Delta_G_kcal_mol': [fwd.dg, rev.dg]
-        }
-        
-        df = pd.DataFrame(primer_data)
-        csv_output = df.to_csv(index=False)
-        
-        return results_text, fwd.seq, rev.seq
-        
-    except Exception as e:
-        return f"Error designing primers: {str(e)}", "", ""
+    return results, fwd.seq, rev.seq
 
-def process_enzyme_input(input_text):
+def process_enzyme_input(input_text: str) -> str:
     """
-    Process enzyme input - convert enzyme name to sequence if needed.
-    Returns the DNA sequence to be added to the primer.
+    Convert an enzyme name to its recognition sequence,
+    or pass through a raw DNA sequence.
     """
-    input_text = input_text.strip().upper()
-    
-    # Check if input is an enzyme name
-    if input_text in RESTRICTION_ENZYMES:
-        return RESTRICTION_ENZYMES[input_text]
-    
-    # Check if input is already a DNA sequence
-    valid_bases = set('ATCG')
-    if all(base in valid_bases for base in input_text):
-        return input_text
-    
-    # If not found and not a valid sequence, return as-is (let primers library handle)
-    return input_text
+    txt = input_text.strip()
+    # Enzyme name?
+    if txt in RESTRICTION_ENZYMES:
+        return RESTRICTION_ENZYMES[txt]
+    # Raw sequence?
+    if set(txt.upper()).issubset(set("ATCG")):
+        return txt.upper()
+    # Otherwise, return as-is and let primers.create decide
+    return txt
 
-def get_enzyme_suggestions(query):
-    """Get enzyme suggestions based on name or sequence."""
-    if not query:
-        return []
+def setup_textcomplete_enzyme_input(label: str, key: str, placeholder: str = "") -> str:
+    """
+    Renders a single‐line text_input with optional
+    streamlit-textcomplete autocomplete for enzyme names/sequences.
+    Returns the final string (enzyme name or raw seq).
+    """
+    # 1) render the input box
+    user_input = st.text_input(label, key=key, placeholder=placeholder)
     
-    query = query.upper()
-    suggestions = []
-    
-    # First try to match enzyme names (prioritize exact prefix matches)
-    for enzyme, sequence in RESTRICTION_ENZYMES.items():
-        if enzyme.upper().startswith(query):
-            suggestions.append(f"{enzyme} ({sequence})")
-    
-    # Then try to match sequences
-    for enzyme, sequence in RESTRICTION_ENZYMES.items():
-        if sequence.startswith(query) and f"{enzyme} ({sequence})" not in suggestions:
-            suggestions.append(f"{enzyme} ({sequence})")
-    
-    return suggestions[:10]  # Limit to 10 suggestions
-
-def extract_enzyme_name_from_selection(selection):
-    """Extract the enzyme name from the dropdown selection."""
-    if not selection or '(' not in selection:
-        return selection
-    
-    # Extract enzyme name from "EnzymeName (SEQUENCE)" format
-    return selection.split(' (')[0]
-
-def setup_textcomplete_enzyme_input(label, key, placeholder="e.g., BsaI or GGTCTC"):
-    """Setup enzyme input with textcomplete autocomplete if available."""
+    # 2) if autocomplete is available, hook it up
     if TEXTCOMPLETE_AVAILABLE:
-        # Create text input instead of text area for better autocomplete experience
-        enzyme_input = st.text_input(
-            label=label,
-            placeholder=placeholder,
-            key=key,
-            max_chars=50
-        )
-        
-        # Create autocomplete strategy with correct search function
         enzyme_strategy = StrategyProps(
             id=f"enzyme_{key}",
-            match=r"(\w*)$",  # Match word characters at end of input
+            # only trigger after 2+ word chars (letters, digits, underscore, hyphen)
+            match=r"(\b[\w\-]{2,})$",
+            # JS search filtering by name or seq prefix
             search=f"""
-            async (term, callback) => {{
-                const enzymes = {json.dumps([
-                    {"name": enzyme, "sequence": sequence, "display": f"{enzyme} ({sequence})"}
-                    for enzyme, sequence in RESTRICTION_ENZYMES.items()
-                ])};
-                
-                const query = term.toLowerCase();
-                const results = enzymes
-                    .filter(enzyme => 
-                        enzyme.name.toLowerCase().startsWith(query) || 
-                        enzyme.sequence.toLowerCase().startsWith(query)
+                async (term, callback) => {{
+                  const enzymes = {_ENZYME_LIST_JSON};
+                  const q = term.toLowerCase();
+                  const results = enzymes
+                    .filter(e =>
+                      e.name.toLowerCase().startsWith(q) ||
+                      e.seq.toLowerCase().startsWith(q)
                     )
-                    .slice(0, 10)
-                    .map(enzyme => enzyme.display);
-                
-                callback(results);
-            }}
+                    .slice(0,10)
+                    .map(e => `${{e.name}} (${{e.seq}})`);
+                  callback(results);
+                }}
             """,
-            replace="(value) => value.split(' ')[0]",  # Extract just the enzyme name
-            template="(value) => `🧬 ${value}`",
+            # on selection, replace the matched text with "EnzymeName "
+            replace="value => value.split(' ')[0] + ' '",
+            # simple HTML template for each dropdown item
+            template="value => `<div style='display:flex;align-items:center'>🧬 ${value}</div>`"
         )
-        
-        # Initialize textcomplete with correct parameters
         textcomplete(
             area_label=label,
             strategies=[enzyme_strategy],
             max_count=10
         )
-        
-        return enzyme_input.strip() if enzyme_input else ""
-    else:
-        # Fallback to original implementation with improved UX
-        enzyme_input = st.text_input(
-            label,
-            placeholder=placeholder,
-            key=key
-        )
-        
-        # Show live suggestions if there's input
-        if enzyme_input and len(enzyme_input) >= 2:  # Only show suggestions after 2+ characters
-            suggestions = get_enzyme_suggestions(enzyme_input)
-            if suggestions:
-                # Create a more user-friendly selection
-                selected = st.selectbox(
-                    "💡 Suggestions (or continue typing):",
-                    options=["Keep typing..."] + suggestions,
-                    key=f"{key}_select",
-                    help="Select a suggestion or continue typing your own sequence"
-                )
-                
-                if selected == "Keep typing...":
-                    return enzyme_input
-                else:
-                    # Extract enzyme name and update the input
-                    enzyme_name = extract_enzyme_name_from_selection(selected)
-                    # Use st.session_state to update the input value
-                    st.session_state[key] = enzyme_name
-                    return enzyme_name
-            else:
-                # Show helpful message when no matches found
-                if all(c in 'ATCG' for c in enzyme_input.upper()):
-                    st.info("✅ Custom DNA sequence detected")
-                else:
-                    st.info("🔍 No matching enzymes found. Try typing an enzyme name or DNA sequence.")
-                return enzyme_input
-        
-        return enzyme_input
+    
+    # return whatever is in session_state for this key, stripped
+    return st.session_state.get(key, "").strip()
 
-# Streamlit app
+
+# === Streamlit App ===
+
 st.set_page_config(
     page_title="DNA Primer Designer",
     page_icon="🧬",
@@ -259,237 +173,123 @@ st.set_page_config(
 )
 
 st.title("🧬 DNA Primer Designer")
-st.markdown("A simple website to help design optimal PCR primers for your DNA sequences. Built by James Warner.")
+st.markdown("A simple site to design optimal PCR primers. Built by James Warner.")
 
-# Initialize session state variables if they don't exist
+# session state defaults
 if 'target_seq_input' not in st.session_state:
     st.session_state.target_seq_input = ""
 if 'parent_seq_input' not in st.session_state:
     st.session_state.parent_seq_input = ""
 
-# Create main layout with proper spacing
-col1, col2 = st.columns([3, 2], gap="large")
-
+# layout
+col1, col2 = st.columns([3,2], gap="large")
 with col1:
     st.markdown("### Input Sequences")
-    
     target_seq = st.text_area(
         "Target DNA Sequence (Required)",
-        placeholder="Enter your target DNA sequence (A, T, C, G only)",
+        placeholder="A, T, C, G only",
         height=100,
         key="target_seq_input"
     )
-    
     parent_seq = st.text_area(
-        "Parent Sequence (Optional - for off-target checking)",
-        placeholder="Enter parent sequence to check for off-target binding",
+        "Parent Sequence (Optional)",
+        placeholder="For off-target checking",
         height=80,
         key="parent_seq_input"
     )
-    
     st.markdown("### Primer Additions")
-    st.markdown("*Add restriction enzyme recognition sites or custom sequences to your primers*")
-    
     if TEXTCOMPLETE_AVAILABLE:
-        st.markdown("💡 **Pro tip**: Start typing enzyme names for autocomplete suggestions!")
+        st.markdown("💡 Start typing enzyme names for autocomplete!")
     else:
-        st.markdown("💡 **Tip**: Type enzyme names (e.g., 'BsaI') and select from suggestions, or enter DNA sequences directly.")
-    
-    # Forward and reverse primer additions with autocomplete
-    col1a, col1b = st.columns(2)
-    
-    with col1a:
+        st.markdown("💡 Install streamlit-textcomplete for enzyme autocomplete.")
+    c1, c2 = st.columns(2)
+    with c1:
         st.markdown("**Forward Primer Addition**")
         add_fwd = setup_textcomplete_enzyme_input(
             "Forward Enzyme/Sequence",
             "fwd_enzyme_input",
-            "e.g., BsaI or GGTCTC"
+            "e.g. BsaI or GGTCTC"
         )
-        
-        # Show what sequence will be added
         if add_fwd:
-            processed_seq = process_enzyme_input(add_fwd)
-            if processed_seq != add_fwd.upper():
-                st.caption(f"Will add: {processed_seq}")
-    
-    with col1b:
+            st.caption(f"→ Will add: {process_enzyme_input(add_fwd)}")
+    with c2:
         st.markdown("**Reverse Primer Addition**")
         add_rev = setup_textcomplete_enzyme_input(
-            "Reverse Enzyme/Sequence", 
+            "Reverse Enzyme/Sequence",
             "rev_enzyme_input",
-            "e.g., BpiI or GAAGAC"
+            "e.g. BpiI or GAAGAC"
         )
-        
-        # Show what sequence will be added
         if add_rev:
-            processed_seq = process_enzyme_input(add_rev)
-            if processed_seq != add_rev.upper():
-                st.caption(f"Will add: {processed_seq}")
+            st.caption(f"→ Will add: {process_enzyme_input(add_rev)}")
 
 with col2:
     st.markdown("### Primer Parameters")
-    
-    st.markdown("**Optimal Values:**")
-    optimal_tm = st.slider(
-        "Optimal Tm (°C)",
-        min_value=50.0,
-        max_value=80.0,
-        value=62.0,
-        step=0.5
-    )
-    
-    optimal_gc = st.slider(
-        "Optimal GC Content",
-        min_value=0.3,
-        max_value=0.7,
-        value=0.5,
-        step=0.05
-    )
-    
-    optimal_len = st.slider(
-        "Optimal Length (bp)",
-        min_value=15,
-        max_value=35,
-        value=22,
-        step=1
-    )
-    
-    st.markdown("**Penalty Weights:**")
-    st.markdown("*Higher values = stronger penalties for deviations from optimal*")
-    
-    penalty_tm = st.slider(
-        "Tm Penalty (per °C deviation)",
-        min_value=0.1,
-        max_value=5.0,
-        value=1.0,
-        step=0.1,
-        help="Penalizes melting temperature deviation from optimal"
-    )
-    
-    penalty_gc = st.slider(
-        "GC Content Penalty (per % deviation)",
-        min_value=0.1,
-        max_value=2.0,
-        value=0.2,
-        step=0.1,
-        help="Penalizes GC content deviation from optimal"
-    )
-    
-    penalty_len = st.slider(
-        "Length Penalty (per bp deviation)",
-        min_value=0.1,
-        max_value=2.0,
-        value=0.5,
-        step=0.1,
-        help="Penalizes primer length deviation from optimal"
-    )
-    
-    penalty_tm_diff = st.slider(
-        "Tm Difference Penalty (per °C diff between primers)",
-        min_value=0.1,
-        max_value=5.0,
-        value=1.0,
-        step=0.1,
-        help="Penalizes melting temperature difference between forward and reverse primers"
-    )
-    
-    penalty_dg = st.slider(
-        "Secondary Structure Penalty (per kcal/mol)",
-        min_value=0.1,
-        max_value=10.0,
-        value=2.0,
-        step=0.1,
-        help="Penalizes free energy in secondary structures (higher |ΔG| = more stable structures)"
-    )
+    st.markdown("**Optimal Values**")
+    optimal_tm = st.slider("Optimal Tm (°C)", 50.0, 80.0, 62.0, 0.5)
+    optimal_gc = st.slider("Optimal GC Content", 0.3, 0.7, 0.5, 0.05)
+    optimal_len = st.slider("Optimal Length (bp)", 15, 35, 22, 1)
+    st.markdown("**Penalty Weights**")
+    penalty_tm = st.slider("Tm Penalty (per °C)", 0.1, 5.0, 1.0, 0.1)
+    penalty_gc = st.slider("GC Penalty (%)", 0.1, 2.0, 0.2, 0.1)
+    penalty_len = st.slider("Length Penalty (per bp)", 0.1, 2.0, 0.5, 0.1)
+    penalty_tm_diff = st.slider("Tm Difference Penalty", 0.1, 5.0, 1.0, 0.1)
+    penalty_dg = st.slider("Secondary Structure Penalty (ΔG)", 0.1, 10.0, 2.0, 0.1)
 
-# Design button with better spacing
 st.markdown("---")
 if st.button("🔬 Design Primers", type="primary", use_container_width=True):
-    if target_seq.strip():
+    if not target_seq.strip():
+        st.error("Please enter a target DNA sequence.")
+    else:
         with st.spinner("Designing primers..."):
             results_text, fwd_primer, rev_primer = design_primers(
                 target_seq, parent_seq, add_fwd, add_rev,
                 optimal_tm, optimal_gc, optimal_len,
-                penalty_tm, penalty_gc, penalty_len, penalty_tm_diff, penalty_dg
+                penalty_tm, penalty_gc, penalty_len,
+                penalty_tm_diff, penalty_dg
             )
-        
         st.markdown("### Results")
-        
-        # Display results
-        col3, col4 = st.columns([2, 1])
-        
-        with col3:
-            st.text_area(
-                "Primer Design Results",
-                value=results_text,
-                height=400
-            )
-        
-        with col4:
+        c3, c4 = st.columns([2,1])
+        with c3:
+            st.text_area("Primer Design Results", value=results_text, height=400)
+        with c4:
             if not results_text.startswith("Error"):
-                st.text_input(
-                    "Forward Primer (5' → 3')",
-                    value=fwd_primer
-                )
-                st.text_input(
-                    "Reverse Primer (5' → 3')",
-                    value=rev_primer
-                )
-                
-                # Create downloadable CSV
-                primer_data = {
-                    'Primer': ['Forward', 'Reverse'],
+                st.text_input("Forward Primer (5' → 3')", value=fwd_primer)
+                st.text_input("Reverse Primer (5' → 3')", value=rev_primer)
+                df = pd.DataFrame({
+                    'Primer': ['Forward','Reverse'],
                     'Sequence_5_to_3': [fwd_primer, rev_primer]
-                }
-                df = pd.DataFrame(primer_data)
-                csv = df.to_csv(index=False)
-                
+                })
                 st.download_button(
-                    label="📥 Download Results as CSV",
-                    data=csv,
+                    "📥 Download Results as CSV",
+                    df.to_csv(index=False),
                     file_name="primer_results.csv",
                     mime="text/csv"
                 )
-    else:
-        st.error("Please enter a target DNA sequence.")
 
-# Examples section for reference
 st.markdown("---")
 st.markdown("### 📋 Example Sequences")
 st.markdown("""
-**Example 1: Basic sequence with BsaI/BpiI sites**
-- Target: `AATGAGACAATAGCACACACAGCTAGGTCAGCATACGAAA`
-- Forward addition: `GGTCTC` (BsaI) or just type "BsaI"
-- Reverse addition: `GAAGAC` (BpiI) or just type "BpiI"
+**Example 1:**  
+Target: `AATGAGACAATAGCACACACAGCTAGGTCAGCATACGAAA`  
+Forward addition: `BsaI` → `GGTCTC`  
+Reverse addition: `BpiI` → `GAAGAC`  
 
-**Example 2: Simple sequence without additions**
-- Target: `ATGAAACGCATTAGCACTGGGCCTAAGTACGAATTC`
+**Example 2 (no additions):**  
+Target: `ATGAAACGCATTAGCACTGGGCCTAAGTACGAATTC`  
 
-**Example 3: With parent sequence for off-target checking**
-- Target: `GCTAGCAATGAGACAATAGCACACACAGCTAGGTCAGCATACGAAAGATCT`
-- Parent: `ggaattacgtAATGAGACAATAGCACACACAGCTAGGTCAGCATACGAAAggaccagttacagga`
+**Example 3 (off-target):**  
+Target: `GCTAGCAATGAGACAATAGCACACACAGCTAGGTCAGCATACGAAAGATCT`  
+Parent: `ggaattacgtAATGAGACAATAGCACACACAGCTAGGTCAGCATACGAAAggaccagttacagga`
 """)
 
-# Instructions
 st.markdown("""
-### 📖 Usage Instructions:
-
-1. **Target Sequence**: Enter your DNA sequence of interest (required)
-2. **Parent Sequence**: Optionally provide a larger sequence context to check for off-target binding
-3. **Primer Additions**: Add restriction enzyme sites or other sequences to your primers
-   - **With autocomplete**: Start typing enzyme names (e.g., "Bsa") and select from suggestions
-   - **Fallback mode**: Type enzyme names (e.g., "BsaI") or sequences (e.g., "GGTCTC") directly
-   - The system will automatically convert enzyme names to their recognition sequences
-4. **Optimal Parameters**: Set target values for primer characteristics
-5. **Penalty Weights**: Adjust how strongly deviations from optimal are penalized
-6. **Click "Design Primers"** to generate optimal forward and reverse primers
-
-**How Enzyme Input Works:**
-- Type enzyme names like "BsaI", "BpiI", "EcoRI" - they'll be converted to recognition sequences
-- Or enter DNA sequences directly like "GGTCTC", "GAAGAC"
-- Autocomplete suggestions show both enzyme name and sequence for reference
-
-**Penalty Calculation**: Each primer's penalty = |Tm deviation| × Tm penalty + |GC deviation| × GC penalty + |length deviation| × length penalty + |primer Tm difference| × Tm diff penalty + |ΔG| × ΔG penalty
-
-The algorithm selects primers with the lowest total penalty scores.
+### 📖 Usage Instructions
+1. Enter your **Target Sequence** (A/T/C/G only).  
+2. (Optional) Enter a **Parent Sequence** for off-target checks.  
+3. Under **Primer Additions**, start typing an enzyme name (e.g. “BsaI”) or a raw sequence (e.g. “GGTCTC”).  
+   - If autocomplete is available, you’ll see suggestions like `BsaI (GGTCTC)`.  
+   - Selecting a suggestion replaces your input with the enzyme name; we then convert it to the recognition site.  
+4. Adjust **Optimal Values** and **Penalty Weights** as needed.  
+5. Click **Design Primers** to generate your forward and reverse primers.  
+6. Copy or download your results as CSV.
 """)
