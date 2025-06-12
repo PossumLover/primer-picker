@@ -199,9 +199,9 @@ with col1:
     )
     st.markdown("### Primer Additions")
     if TEXTCOMPLETE_AVAILABLE:
-        st.markdown("💡 Start typing enzyme names for autocomplete!")
+        st.markdown("💡 Type restriciton enzyme name or restriction!")
     else:
-        st.markdown("💡 Install streamlit-textcomplete for enzyme autocomplete.")
+        st.markdown("💡  Type restriciton enzyme name or restriction.")
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("**Forward Primer Addition**")
