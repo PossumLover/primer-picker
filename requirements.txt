@@ -2,3 +2,4 @@ streamlit
 primers
 pandas
 seqfold>=0.7.3
+streamlit-textcomplete
